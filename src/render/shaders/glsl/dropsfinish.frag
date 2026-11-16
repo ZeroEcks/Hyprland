@@ -4,7 +4,7 @@
 
 precision         highp float;
 in vec2           v_texcoord;
-uniform sampler2D tex;
+uniform highp sampler2D tex;
 
 uniform float     noise;
 uniform float     brightness;
@@ -13,7 +13,7 @@ uniform float     glassSize;
 uniform float     glassRoughness;
 uniform float     time;
 uniform vec2      dropsPosition;
-uniform sampler2D sharpTex;
+uniform highp sampler2D sharpTex;
 
 #include "defines.h"
 #if USE_CM

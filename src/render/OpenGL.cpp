@@ -1299,21 +1299,43 @@ void CHyprOpenGLImpl::passCMUniforms(WP<CShader> shader, const NColorManagement:
     shader->setUniformFloat(SHADER_SDR_SATURATION, settings.sdrSaturation);
     shader->setUniformFloat(SHADER_SDR_BRIGHTNESS, settings.sdrBrightnessMultiplier);
 
-    if (!targetImageDescription->value().icc.present) {
-        const auto cacheKey = std::pair{imageDescription->id(), targetImageDescription->id()};
-        if (!primariesConversionCache.contains(cacheKey)) {
-            const auto& mat = settings.convertMatrix;
-            // clang-format off
-            const std::array<GLfloat, 9> glConvertMatrix = {
-                mat[0][0], mat[1][0], mat[2][0], //
-                mat[0][1], mat[1][1], mat[2][1], //
-                mat[0][2], mat[1][2], mat[2][2], //
-            };
-            // clang-format on
-            primariesConversionCache.emplace(cacheKey, glConvertMatrix);
-        }
-        shader->setUniformMatrix3fv(SHADER_CONVERT_MATRIX, 1, false, primariesConversionCache[cacheKey]);
+    const auto cacheKey = std::pair{imageDescription->id(), targetImageDescription->id()};
+    if (!primariesConversionCache.contains(cacheKey)) {
+        const auto& mat = settings.convertMatrix;
+        // clang-format off
+        const std::array<GLfloat, 9> glConvertMatrix = {
+            mat[0][0], mat[1][0], mat[2][0], //
+            mat[0][1], mat[1][1], mat[2][1], //
+            mat[0][2], mat[1][2], mat[2][2], //
+        };
+        // clang-format on
+        primariesConversionCache.emplace(cacheKey, glConvertMatrix);
+    }
+    shader->setUniformMatrix3fv(SHADER_CONVERT_MATRIX, 1, false, primariesConversionCache[cacheKey]);
 
+    if (targetImageDescription->value().icc.present) {
+        const auto& icc = targetImageDescription->value().icc;
+        setActiveTexture(GL_TEXTURE8);
+        icc.lutTexture->bind();
+        shader->setUniformInt(SHADER_LUT_3D, 8);
+        shader->setUniformFloat(SHADER_LUT_SIZE, icc.lutSize);
+        std::array<float, 3> offset, scale;
+        for (size_t c = 0; c < 3; ++c) {
+            offset[c]      = std::copysign(std::sqrt(std::abs(icc.lutDomainMin[c])), icc.lutDomainMin[c]);
+            const float hi = std::copysign(std::sqrt(std::abs(icc.lutDomainMax[c])), icc.lutDomainMax[c]);
+            scale[c]       = 1.F / (hi - offset[c]);
+        }
+        shader->setUniformFloat3(SHADER_LUT_DOMAIN_OFFSET, offset[0], offset[1], offset[2]);
+        shader->setUniformFloat3(SHADER_LUT_DOMAIN_SCALE, scale[0], scale[1], scale[2]);
+        if (shader->getUniformLocation(SHADER_ICC_TO_SRGB) >= 0) {
+            auto        toSRGB = CPrimaries::from(icc.lutInputPrimaries)->convertMatrix(CPrimaries::from(CM_PRIMARIES_SRGB));
+            const auto& mat    = toSRGB.mat();
+            shader->setUniformMatrix3fv(SHADER_ICC_TO_SRGB, 1, false,
+                                        {sc<float>(mat[0][0]), sc<float>(mat[1][0]), sc<float>(mat[2][0]), sc<float>(mat[0][1]), sc<float>(mat[1][1]), sc<float>(mat[2][1]),
+                                         sc<float>(mat[0][2]), sc<float>(mat[1][2]), sc<float>(mat[2][2])});
+        }
+        setActiveTexture(GL_TEXTURE0);
+    } else {
         const auto mat = settings.dstPrimaries2XYZ;
         // clang-format off
         const std::array<GLfloat, 9> glTargetPrimariesXYZ = {
@@ -1323,15 +1345,6 @@ void CHyprOpenGLImpl::passCMUniforms(WP<CShader> shader, const NColorManagement:
         };
         // clang-format on
         shader->setUniformMatrix3fv(SHADER_TARGET_PRIMARIES_XYZ, 1, false, glTargetPrimariesXYZ);
-    } else {
-        // TODO: this sucks
-        setActiveTexture(GL_TEXTURE8);
-        targetImageDescription->value().icc.lutTexture->bind();
-
-        shader->setUniformInt(SHADER_LUT_3D, 8);
-        shader->setUniformFloat(SHADER_LUT_SIZE, targetImageDescription->value().icc.lutSize);
-
-        setActiveTexture(GL_TEXTURE0);
     }
 }
 
@@ -1487,6 +1500,12 @@ WP<CShader> CHyprOpenGLImpl::renderToFBInternal(CRenderContext& ctx, SP<ITexture
         return WORK_BUFFER_IMAGE_DESCRIPTION;
     }();
 
+    // Restrict only bounded client sRGB samples, before conversion. Working textures
+    // and explicitly extended descriptions must retain signed/out-of-range values.
+    const auto sourceTF       = SOURCE_IMAGE_DESCRIPTION->value().transferFunction;
+    const bool clampSourceRGB = surface.valid() && tex == surface->m_current.texture && SOURCE_IMAGE_DESCRIPTION->getPrimaries()->value() == NColorPrimaries::BT709 &&
+        (sourceTF == CM_TRANSFER_FUNCTION_SRGB || sourceTF == CM_TRANSFER_FUNCTION_GAMMA22 || sourceTF == CM_TRANSFER_FUNCTION_GAMMA28 || sourceTF == CM_TRANSFER_FUNCTION_BT1886);
+
     if (data.blur && data.blurredBG && (*PBLEND || data.forceBlurBlend))
         shaderFeatures |= SH_FEAT_BLUR;
 
@@ -1552,6 +1571,7 @@ WP<CShader> CHyprOpenGLImpl::renderToFBInternal(CRenderContext& ctx, SP<ITexture
     }
 
     shader->setUniformFloat(SHADER_ALPHA, alpha);
+    shader->setUniformInt(SHADER_CLAMP_SOURCE_RGB, clampSourceRGB);
 
     if (shaderFeatures & SH_FEAT_BLUR) {
         const auto BLURUV = resolveBlurUV(newBox, data.blurredBG->m_size);

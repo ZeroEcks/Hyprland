@@ -4,7 +4,7 @@
 
 precision         highp float;
 in vec2           v_texcoord;
-uniform sampler2D tex;
+uniform highp sampler2D tex;
 
 uniform float     noise;
 uniform float     brightness;
@@ -69,7 +69,9 @@ void main() {
     float emboss = dot(normal, LIGHT_DIRECTION);
     linearColor *= 1.0 + emboss * glassRoughness * 0.08;
 
-    color = fromLinear(vec4(max(linearColor, vec3(0.0)) * color.a, color.a), auroraTransferFunction);
+    if (auroraTransferFunction != CM_TRANSFER_FUNCTION_EXT_LINEAR)
+        linearColor = max(linearColor, vec3(0.0));
+    color     = fromLinear(vec4(linearColor * color.a, color.a), auroraTransferFunction);
     fragColor = blurFinish(color, v_texcoord, noise, brightness
 #if USE_CM
                            ,

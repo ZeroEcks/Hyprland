@@ -5,8 +5,8 @@
 precision highp float;
 
 in vec2 v_texcoord;
-uniform sampler2D tex;
-uniform sampler2D sharpTex;
+uniform highp sampler2D tex;
+uniform highp sampler2D sharpTex;
 
 uniform int acrylicEnabled;
 uniform vec4 acrylicExtent;

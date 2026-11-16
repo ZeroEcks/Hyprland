@@ -4,7 +4,7 @@
 
 precision         highp float;
 
-uniform sampler2D tex;
+uniform highp sampler2D tex;
 uniform float     radius;
 uniform vec2      halfpixel;
 

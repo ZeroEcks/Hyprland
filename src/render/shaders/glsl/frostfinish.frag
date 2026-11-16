@@ -4,7 +4,7 @@
 
 precision         highp float;
 in vec2           v_texcoord;
-uniform sampler2D tex;
+uniform highp sampler2D tex;
 
 uniform float     noise;
 uniform float     brightness;

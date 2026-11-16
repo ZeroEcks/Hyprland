@@ -11,9 +11,16 @@ using namespace Render;
 using namespace Render::GL;
 using namespace NColorManagement;
 
+PImageDescription Render::GL::blurIntermediateImageDescription(CRenderContext& ctx) {
+    const auto MONITOR = ctx.m_data.pMonitor;
+    if (MONITOR->m_imageDescription->value().icc.present && MONITOR->useFP16())
+        return g_pHyprRenderer->workBufferImageDescription(ctx);
+    return getDefaultImageDescription();
+}
+
 static SCMSettings blurIntermediateCMSettings(CRenderContext& ctx, bool toIntermediate) {
     const auto WORKBUFFER   = g_pHyprRenderer->workBufferImageDescription(ctx);
-    const auto INTERMEDIATE = getDefaultImageDescription();
+    const auto INTERMEDIATE = blurIntermediateImageDescription(ctx);
 
     auto       settings = toIntermediate ? g_pHyprRenderer->getCMSettings(ctx, WORKBUFFER, INTERMEDIATE) : g_pHyprRenderer->getCMSettings(ctx, INTERMEDIATE, WORKBUFFER);
     auto&      range    = toIntermediate ? settings.dstTFRange : settings.srcTFRange;
@@ -123,12 +130,13 @@ SP<CGLFramebuffer> CDualKawaseBlurProvider::blurGL(CRenderContext& ctx, SP<CGLFr
 
         WP<CShader> shader;
 
-        const bool  skipCM = !m_impl.m_cmSupported || !g_pHyprRenderer->workBufferImageDescription(ctx)->needsCM(getDefaultImageDescription());
+        const auto  INTERMEDIATE = blurIntermediateImageDescription(ctx);
+        const bool  skipCM       = !m_impl.m_cmSupported || !g_pHyprRenderer->workBufferImageDescription(ctx)->needsCM(INTERMEDIATE);
         if (!skipCM) {
             const auto settings = blurIntermediateCMSettings(ctx, /* toIntermediate */ true);
             shader              = m_impl.useShader(m_impl.getShaderVariant(SH_FRAG_BLURPREPARE, SH_FEAT_CM, settings.sourceTF, settings.targetTF));
 
-            m_impl.passCMUniforms(shader, g_pHyprRenderer->workBufferImageDescription(ctx), getDefaultImageDescription(), false, -1.F, -1, settings);
+            m_impl.passCMUniforms(shader, g_pHyprRenderer->workBufferImageDescription(ctx), INTERMEDIATE, false, -1.F, -1, settings);
             shader->setUniformFloat(SHADER_SDR_SATURATION,
                                     m_renderData.pMonitor->m_sdrSaturation > 0 &&
                                             g_pHyprRenderer->workBufferImageDescription(ctx)->value().transferFunction == CM_TRANSFER_FUNCTION_ST2084_PQ ?
@@ -243,12 +251,13 @@ SP<CGLFramebuffer> CDualKawaseBlurProvider::blurGL(CRenderContext& ctx, SP<CGLFr
             m_impl.setActiveTexture(GL_TEXTURE0);
         }
 
-        const bool skipCM = !m_impl.m_cmSupported || !g_pHyprRenderer->workBufferImageDescription(ctx)->needsCM(getDefaultImageDescription());
+        const auto INTERMEDIATE = blurIntermediateImageDescription(ctx);
+        const bool skipCM       = !m_impl.m_cmSupported || !g_pHyprRenderer->workBufferImageDescription(ctx)->needsCM(INTERMEDIATE);
         if (!skipCM) {
             const auto settings = blurIntermediateCMSettings(ctx, /* toIntermediate */ false);
             shader              = m_impl.useShader(m_impl.getShaderVariant(MATERIAL_REQUIREMENTS.finishFragment, SH_FEAT_CM, settings.sourceTF, settings.targetTF));
 
-            m_impl.passCMUniforms(shader, getDefaultImageDescription(), g_pHyprRenderer->workBufferImageDescription(ctx), false, -1.F, -1, settings);
+            m_impl.passCMUniforms(shader, INTERMEDIATE, g_pHyprRenderer->workBufferImageDescription(ctx), false, -1.F, -1, settings);
             shader->setUniformFloat(SHADER_SDR_SATURATION,
                                     m_renderData.pMonitor->m_sdrSaturation > 0 &&
                                             g_pHyprRenderer->workBufferImageDescription(ctx)->value().transferFunction == CM_TRANSFER_FUNCTION_ST2084_PQ ?

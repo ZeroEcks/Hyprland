@@ -5,6 +5,8 @@
 #include "../../render/Renderer.hpp"
 #include "render/types.hpp"
 #include <hyprutils/memory/UniquePtr.hpp>
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <vector>
 #include <numeric>
@@ -495,7 +497,54 @@ RGBAColor NColorManagement::convertColor(RGBAColor color, PImageDescription srcD
     color /= std::max(color.c.a, 0.001);
     color = toLinearRGB(color, srcDesc->value().transferFunction);
     if (dstDesc->value().icc.present) {
-        // color.rgb = applyIcc3DLut(color.rgb, iccLut3D, iccLutSize);
+        const auto&                icc    = dstDesc->value().icc;
+        const std::array<float, 3> linear = {sc<float>(color.c.r), sc<float>(color.c.g), sc<float>(color.c.b)};
+        std::array<float, 3>       converted{};
+        for (size_t row = 0; row < 3; ++row) {
+            for (size_t column = 0; column < 3; ++column)
+                converted[row] += static_cast<float>(settings.convertMatrix[row][column]) * linear[column];
+        }
+        if (srcDesc->value().transferFunction != CM_TRANSFER_FUNCTION_LINEAR) {
+            for (float& channel : converted)
+                channel = channel * (settings.srcTFRange.max - settings.srcTFRange.min) + settings.srcTFRange.min;
+        }
+        const float denominator = std::max(settings.dstRefLuminance - settings.dstTFRange.min, 0.001F);
+        for (float& channel : converted) {
+            channel = (channel * settings.referenceLuminanceScale - settings.dstTFRange.min) / denominator;
+        }
+
+        std::array<size_t, 3> low{}, high{};
+        std::array<float, 3>  fraction{};
+        const size_t          size = icc.lutSize;
+        for (size_t c = 0; c < 3; ++c) {
+            const float lo       = icc.lutDomainMin[c];
+            const float hi       = icc.lutDomainMax[c];
+            const float shapedLo = std::copysign(std::sqrt(std::abs(lo)), lo);
+            const float shapedHi = std::copysign(std::sqrt(std::abs(hi)), hi);
+            const float shaped   = std::copysign(std::sqrt(std::abs(converted[c])), converted[c]);
+            const float position = std::clamp((shaped - shapedLo) / (shapedHi - shapedLo), 0.F, 1.F) * float(size - 1);
+            low[c]               = static_cast<size_t>(position);
+            high[c]              = std::min(low[c] + 1, size - 1);
+            fraction[c]          = position - float(low[c]);
+        }
+
+        std::array<float, 3> result{};
+        for (size_t b = 0; b < 2; ++b) {
+            for (size_t g = 0; g < 2; ++g) {
+                for (size_t r = 0; r < 2; ++r) {
+                    const size_t x      = r ? high[0] : low[0];
+                    const size_t y      = g ? high[1] : low[1];
+                    const size_t z      = b ? high[2] : low[2];
+                    const float  weight = (r ? fraction[0] : 1.F - fraction[0]) * (g ? fraction[1] : 1.F - fraction[1]) * (b ? fraction[2] : 1.F - fraction[2]);
+                    const size_t offset = ((z * size * size + y * size + x) * 3);
+                    for (size_t c = 0; c < 3; ++c)
+                        result[c] += icc.lutDataPacked[offset + c] * weight;
+                }
+            }
+        }
+        color.c.r = result[0];
+        color.c.g = result[1];
+        color.c.b = result[2];
         color *= color.c.a;
     } else {
         const auto convertMatrix = srcDesc->getPrimaries()->convertMatrix(dstDesc->getPrimaries());

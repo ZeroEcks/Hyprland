@@ -8,6 +8,7 @@
 #include "../Color.hpp"
 #include "../../debug/log/Logger.hpp"
 
+#include <array>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -252,10 +253,13 @@ namespace NColorManagement {
             }
         } masteringLuminances;
 
-        // Matrix data from ICC
+        // ICC LUT input is linear BT.2020 D65, normalized so reference white is 1.
         struct SICCData {
             bool                        present = false;
-            size_t                      lutSize = 33;
+            SPCPRimaries                lutInputPrimaries = NColorPrimaries::BT2020;
+            std::array<float, 3>        lutDomainMin      = {0.F, 0.F, 0.F};
+            std::array<float, 3>        lutDomainMax      = {1.F, 1.F, 1.F};
+            size_t                      lutSize           = 129;
             std::vector<float>          lutDataPacked;
             SP<Render::ITexture>        lutTexture;
             std::optional<SVCGTTable16> vcgt;

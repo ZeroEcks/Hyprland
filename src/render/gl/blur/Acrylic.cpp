@@ -28,6 +28,9 @@ static float srgbToLinear(float value) {
 }
 
 static float acrylicLuminanceScale(CRenderContext& ctx) {
+    if (blurIntermediateImageDescription(ctx)->value().transferFunction == CM_TRANSFER_FUNCTION_EXT_LINEAR)
+        return 1.F;
+
     const auto INTERMEDIATE = getDefaultImageDescription();
     const auto WORKBUFFER   = g_pHyprRenderer->workBufferImageDescription(ctx);
     if (!WORKBUFFER)
@@ -92,7 +95,7 @@ void CAcrylicBlurMaterial::bindFinish(CRenderContext& ctx, WP<CShader> shader, c
     shader->setUniformFloat4(SHADER_ACRYLIC_TINT, srgbToLinear(sc<float>(TINT.r)) * LUMINANCE_SCALE, srgbToLinear(sc<float>(TINT.g)) * LUMINANCE_SCALE,
                              srgbToLinear(sc<float>(TINT.b)) * LUMINANCE_SCALE, TINT_DEPTH);
     shader->setUniformFloat(SHADER_ACRYLIC_STRENGTH, std::clamp(context.strength, 0.F, 1.F));
-    shader->setUniformInt(SHADER_ACRYLIC_TRANSFER_FUNCTION, sc<int>(getDefaultImageDescription()->value().transferFunction));
+    shader->setUniformInt(SHADER_ACRYLIC_TRANSFER_FUNCTION, sc<int>(blurIntermediateImageDescription(ctx)->value().transferFunction));
     shader->setUniformFloat(SHADER_ACRYLIC_LUMINANCE_SCALE, LUMINANCE_SCALE);
 }
 

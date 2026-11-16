@@ -2692,14 +2692,17 @@ bool CMonitor::useFP16() {
         return true;
     };
 
-    // Auto: use FP16 if the monitor is not sRGB or is 10 bit
-    return g_pHyprRenderer->fp16Supported() && (*PFP16 == 1 || (*PFP16 == 2 && (!isSRGB() || m_enabled10bit)));
+    // ICC-managed outputs need signed, extended-linear working values. In auto mode,
+    // select FP16 even for nominally 8-bit sRGB outputs when the GPU supports it.
+    return g_pHyprRenderer->fp16Supported() && (*PFP16 == 1 || (*PFP16 == 2 && (m_imageDescription->value().icc.present || !isSRGB() || m_enabled10bit)));
 }
 
 PImageDescription CMonitor::workBufferImageDescription() {
     static const auto PFP16TF = CConfigValue<Hyprlang::INT>("render:fp16_sdr_tf");
 
-    if (!useFP16() && !m_imageDescription->value().icc.present)
+    // An explicit FP16 disable keeps the configured output-format fallback. Do not
+    // describe that buffer as extended-linear: it cannot preserve signed wide-gamut values.
+    if (!useFP16())
         return m_imageDescription;
 
     const auto& value = m_imageDescription->value();
@@ -2709,8 +2712,8 @@ PImageDescription CMonitor::workBufferImageDescription() {
 
     const auto& cached = m_cachedInternalDescription->value();
 
-    // HDR
-    if (isHDRLikeTF || *PFP16TF != 0) {
+    // FP16 working storage is signed extended-linear for HDR and ICC-managed SDR.
+    if (isHDRLikeTF || value.icc.present || *PFP16TF != 0) {
         if (cached.transferFunction != LINEAR_IMAGE_DESCRIPTION->value().transferFunction || cached.luminances != value.luminances)
             m_cachedInternalDescription = LINEAR_IMAGE_DESCRIPTION->with(value.luminances);
         return m_cachedInternalDescription;

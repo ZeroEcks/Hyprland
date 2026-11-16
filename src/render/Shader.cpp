@@ -145,6 +145,10 @@ void CShader::getUniformLocations() {
     m_uniformLocations[SHADER_CONVERT_MATRIX]       = getUniform("convertMatrix");
     m_uniformLocations[SHADER_LUT_3D]               = getUniform("iccLut3D");
     m_uniformLocations[SHADER_LUT_SIZE]             = getUniform("iccLutSize");
+    m_uniformLocations[SHADER_LUT_DOMAIN_OFFSET]                = getUniform("iccLutDomainOffset");
+    m_uniformLocations[SHADER_LUT_DOMAIN_SCALE]                 = getUniform("iccLutDomainScale");
+    m_uniformLocations[SHADER_ICC_TO_SRGB]                      = getUniform("iccToSRGB");
+    m_uniformLocations[SHADER_CLAMP_SOURCE_RGB]                 = getUniform("clampSourceRGB");
     m_uniformLocations[SHADER_TONEMAP_MODE]         = getUniform("tonemapMode");
     //
     m_uniformLocations[SHADER_TEX]                      = getUniform("tex");

@@ -3,7 +3,7 @@
 #extension GL_ARB_shading_language_include : enable
 
 precision         highp float;
-uniform sampler2D tex;
+uniform highp sampler2D tex;
 
 uniform float     radius;
 uniform vec2      halfpixel;

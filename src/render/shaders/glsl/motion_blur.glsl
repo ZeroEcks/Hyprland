@@ -3,7 +3,7 @@
 
 const int MOTION_BLUR_MAX_SAMPLES = 64;
 
-vec4 motionBlurSample(sampler2D texSampler, vec4 previousBox, vec4 currentBox, vec4 sourceBox, vec2 sourceTexOrigin, vec2 sourceTexSize, int requestedSamples,
+vec4 motionBlurSample(highp sampler2D texSampler, vec4 previousBox, vec4 currentBox, vec4 sourceBox, vec2 sourceTexOrigin, vec2 sourceTexSize, int requestedSamples,
                       bool useRGBA) {
     int   samples    = int(clamp(float(requestedSamples), 1.0, float(MOTION_BLUR_MAX_SAMPLES)));
     vec4 accumulated = vec4(0.0);

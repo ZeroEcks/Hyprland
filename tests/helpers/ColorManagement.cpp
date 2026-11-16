@@ -168,3 +168,45 @@ TEST(ColorManagement, RelativeReferenceWhiteDoesNotDoubleScaleWorkBuffers) {
         }
     }
 }
+
+TEST(ColorManagement, ICCConversionAnchorsReferenceWhiteAndPreservesAlpha) {
+    auto targetValue             = DEFAULT_SRGB_IMAGE_DESCRIPTION->value();
+    targetValue.icc.present      = true;
+    targetValue.icc.lutSize      = 4;
+    targetValue.icc.lutDomainMin = {-0.25F, -0.25F, -0.25F};
+    // A gamma-2 device: signed-square-root grid points are -0.5, 0, 0.5, 1.
+    // The device clips negative light, but the input domain must include it.
+    for (size_t b = 0; b < 4; ++b) {
+        for (size_t g = 0; g < 4; ++g) {
+            for (size_t r = 0; r < 4; ++r) {
+                for (const auto i : {r, g, b})
+                    targetValue.icc.lutDataPacked.push_back(std::max(0.F, (sc<float>(i) - 1.F) * 0.5F));
+            }
+        }
+    }
+    const auto target = CImageDescription::from(targetValue);
+    for (const auto reference : {80U, 203U, 400U}) {
+        const auto                source   = CImageDescription::from(SImageDescription{
+            .transferFunction = CM_TRANSFER_FUNCTION_EXT_LINEAR,
+            .primariesNameSet = true,
+            .primariesNamed   = CM_PRIMARIES_BT2020,
+            .luminances       = {.min = 0.F, .max = reference * 4, .reference = reference},
+        });
+        const Render::SCMSettings settings = {
+            .sourceTF                = CM_TRANSFER_FUNCTION_EXT_LINEAR,
+            .srcTFRange              = {.min = 0.F, .max = sc<float>(reference * 4)},
+            .dstTFRange              = {.min = 0.2F, .max = 80.F},
+            .srcRefLuminance         = sc<float>(reference),
+            .dstRefLuminance         = 80.F,
+            .referenceLuminanceScale = 80.F / reference,
+            .convertMatrix           = {{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}},
+        };
+        for (const auto alpha : {0.0, 0.25, 0.5, 1.0}) {
+            for (const auto signal : {-0.125, 0.000625, 0.03125, 0.125, 0.25, 0.5}) {
+                const auto   color  = convertColor(RGBAColor{{.r = signal * alpha, .g = signal * alpha, .b = signal * alpha, .a = alpha}}, source, target, settings);
+                const double device = std::sqrt(std::clamp((signal * 320.0 - 0.2) / 79.8, 0.0, 1.0));
+                expectNeutralColor(color, device * alpha, alpha);
+            }
+        }
+    }
+}

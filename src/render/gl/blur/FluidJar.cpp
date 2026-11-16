@@ -168,7 +168,7 @@ void CFluidJarBlurMaterial::bindFinish(CRenderContext& ctx, WP<CShader> shader, 
     shader->setUniformFloat2(SHADER_FLUIDJAR_LOGICAL_SIZE, sc<float>(logicalExtent.width), sc<float>(logicalExtent.height));
     shader->setUniformFloat4(SHADER_FLUIDJAR_COLOR, color.r, color.g, color.b, color.a);
     shader->setUniformFloat(SHADER_FLUIDJAR_REFRACTION, MAX_REFRACTION);
-    shader->setUniformInt(SHADER_FLUIDJAR_TRANSFER_FUNCTION, sc<int>(getDefaultImageDescription()->value().transferFunction));
+    shader->setUniformInt(SHADER_FLUIDJAR_TRANSFER_FUNCTION, sc<int>(blurIntermediateImageDescription(ctx)->value().transferFunction));
     shader->setUniformFloat(SHADER_FLUIDJAR_STRENGTH, std::clamp(context.strength, 0.F, 1.F));
     shader->setUniformFloat(SHADER_FLUIDJAR_TURBULENCE, std::clamp(*PFLUIDTURBULENCE, 0.F, MAX_TURBULENCE));
     shader->setUniformFloat(SHADER_FLUIDJAR_DISTORTION, std::clamp(*PFLUIDDISTORTION, 0.F, MAX_DISTORTION));

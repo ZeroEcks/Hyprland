@@ -2181,8 +2181,10 @@ SCMSettings IHyprRenderer::getCMSettings(CRenderContext& ctx, const NColorManage
                       (imageDescription->value().luminances.max > 0 ? imageDescription->value().luminances.max : imageDescription->value().luminances.reference);
     const auto  dstMaxLuminance = targetImageDescription->value().luminances.max > 0 ? targetImageDescription->value().luminances.max : 10000;
 
-    auto        matrix = imageDescription->getPrimaries()->convertMatrix(targetImageDescription->getPrimaries());
-    auto        toXYZ  = targetImageDescription->getPrimaries()->value().toXYZ();
+    const auto  targetPrimaries =
+        targetImageDescription->value().icc.present ? CPrimaries::from(targetImageDescription->value().icc.lutInputPrimaries) : targetImageDescription->getPrimaries();
+    auto        matrix = imageDescription->getPrimaries()->convertMatrix(targetPrimaries);
+    auto        toXYZ  = targetPrimaries->value().toXYZ();
 
     const bool  needsMod = needsSDRmod &&
         ((ctx.m_data.pMonitor->m_sdrSaturation > 0 && ctx.m_data.pMonitor->m_sdrSaturation != 1.0f) ||

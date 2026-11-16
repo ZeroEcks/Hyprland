@@ -1,6 +1,6 @@
 #include "ColorManagement.hpp"
 #include "../math/Math.hpp"
-#include <cstddef>
+#include <cmath>
 #include <fstream>
 
 #include "../../debug/log/Logger.hpp"
@@ -149,17 +149,17 @@ struct CmsTransformDeleter {
 using UniqueProfile   = std::unique_ptr<std::remove_pointer_t<cmsHPROFILE>, CmsProfileDeleter>;
 using UniqueTransform = std::unique_ptr<std::remove_pointer_t<cmsHTRANSFORM>, CmsTransformDeleter>;
 
-static UniqueProfile createLinearSRGBProfile() {
+static UniqueProfile createLinearBT2020Profile() {
     cmsCIExyYTRIPLE prim{};
-    // sRGB / Rec.709 primaries
-    prim.Red.x   = 0.6400;
-    prim.Red.y   = 0.3300;
+    // BT.2020 primaries
+    prim.Red.x   = 0.708;
+    prim.Red.y   = 0.292;
     prim.Red.Y   = 1.0;
-    prim.Green.x = 0.3000;
-    prim.Green.y = 0.6000;
+    prim.Green.x = 0.170;
+    prim.Green.y = 0.797;
     prim.Green.Y = 1.0;
-    prim.Blue.x  = 0.1500;
-    prim.Blue.y  = 0.0600;
+    prim.Blue.x  = 0.131;
+    prim.Blue.y  = 0.046;
     prim.Blue.Y  = 1.0;
 
     cmsCIExyY wp{};
@@ -170,47 +170,103 @@ static UniqueProfile createLinearSRGBProfile() {
     cmsToneCurve* lin       = cmsBuildGamma(nullptr, 1.0);
     cmsToneCurve* curves[3] = {lin, lin, lin};
 
-    cmsHPROFILE   p = cmsCreateRGBProfile(&wp, &prim, curves);
+    cmsHPROFILE   profile = cmsCreateRGBProfile(&wp, &prim, curves);
 
     cmsFreeToneCurve(lin);
-    return UniqueProfile{p};
+    return UniqueProfile{profile};
+}
+
+static float shapeLutInput(float value) {
+    return std::copysign(std::sqrt(std::abs(value)), value);
 }
 
 static std::expected<void, std::string> buildIcc3DLut(cmsHPROFILE profile, SImageDescription& image) {
-    UniqueProfile src = createLinearSRGBProfile();
-    if (!src)
-        return std::unexpected("Failed to create linear sRGB profile");
+    UniqueProfile inputProfile = createLinearBT2020Profile();
+    if (!inputProfile)
+        return std::unexpected("Failed to create linear BT.2020 profile");
 
     // Rendering intent: RELATIVE_COLORIMETRIC is common for displays; add BPC to be safe.
     const int             intent = INTENT_RELATIVE_COLORIMETRIC;
     const cmsUInt32Number flags  = cmsFLAGS_BLACKPOINTCOMPENSATION | cmsFLAGS_HIGHRESPRECALC; // good quality precalc in LCMS
 
+    // Find the profile-device gamut in the LUT input space, including interior
+    // samples because LUT-based profiles need not map cube corners to extrema.
+    UniqueTransform toInput{cmsCreateTransform(profile, TYPE_RGB_FLT, inputProfile.get(), TYPE_RGB_FLT, intent, flags)};
+    if (!toInput)
+        return std::unexpected("Failed to create ICC gamut transform");
+
+    std::array<float, 3> minimum     = {0.F, 0.F, 0.F};
+    std::array<float, 3> maximum     = {1.F, 1.F, 1.F};
+    constexpr size_t     BOUNDS_GRID = 17;
+    for (size_t b = 0; b < BOUNDS_GRID; ++b) {
+        for (size_t g = 0; g < BOUNDS_GRID; ++g) {
+            for (size_t r = 0; r < BOUNDS_GRID; ++r) {
+                float device[3] = {r / float(BOUNDS_GRID - 1), g / float(BOUNDS_GRID - 1), b / float(BOUNDS_GRID - 1)};
+                float rgb[3];
+                cmsDoTransform(toInput.get(), device, rgb, 1);
+                for (size_t c = 0; c < 3; ++c) {
+                    if (!std::isfinite(rgb[c]))
+                        return std::unexpected("ICC gamut transform produced a non-finite value");
+                    minimum[c] = std::min(minimum[c], rgb[c]);
+                    maximum[c] = std::max(maximum[c], rgb[c]);
+                }
+            }
+        }
+    }
+
+    // Pad the measured excursions, not the whole nominal cube: a small negative
+    // profile value must not consume near-black precision across every channel.
+    for (size_t c = 0; c < 3; ++c) {
+        minimum[c] *= 1.05F;
+        maximum[c] = 1.F + (maximum[c] - 1.F) * 1.05F;
+
+        // Keep zero and reference white exactly on grid points. This avoids
+        // interpolating across the signed shaper's cusp at black.
+        const float lo    = shapeLutInput(minimum[c]);
+        const float hi    = shapeLutInput(maximum[c]);
+        int         steps = sc<int>((image.icc.lutSize - 1) / (hi - lo));
+        while (steps > 0 && std::ceil(-lo * steps) + std::ceil(hi * steps) > image.icc.lutSize - 1)
+            --steps;
+        if (steps > 0) {
+            const float negativeSteps = std::ceil(-lo * steps);
+            const float alignedLo     = -negativeSteps / steps;
+            const float alignedHi     = (image.icc.lutSize - 1 - negativeSteps) / steps;
+            minimum[c]                = -alignedLo * alignedLo;
+            maximum[c]                = alignedHi * alignedHi;
+        }
+    }
+    image.icc.lutInputPrimaries = NColorPrimaries::BT2020;
+    image.icc.lutDomainMin      = minimum;
+    image.icc.lutDomainMax      = maximum;
+
     // float->float transform (linear input, encoded output in dst device space)
-    UniqueTransform xform{cmsCreateTransform(src.get(), TYPE_RGB_FLT, profile, TYPE_RGB_FLT, intent, flags)};
+    UniqueTransform xform{cmsCreateTransform(inputProfile.get(), TYPE_RGB_FLT, profile, TYPE_RGB_FLT, intent, flags)};
     if (!xform)
         return std::unexpected("Failed to create ICC transform");
 
-    LOG(Log::DEBUG, "Building a {}³ 3D LUT", image.icc.lutSize);
+    LOG(Log::DEBUG, "Building a {}³ 3D LUT with BT.2020 domain [{}, {}, {}]..[{}, {}, {}]", image.icc.lutSize, minimum[0], minimum[1], minimum[2], maximum[0], maximum[1],
+        maximum[2]);
 
     image.icc.present = true;
     image.icc.lutDataPacked.resize(image.icc.lutSize * image.icc.lutSize * image.icc.lutSize * 3);
+    auto idx = [&image](size_t r, size_t g, size_t b) -> size_t { return (b * image.icc.lutSize * image.icc.lutSize + g * image.icc.lutSize + r) * 3; };
 
-    auto idx = [&image](int r, int g, int b) -> size_t {
-        //
-        return ((size_t)b * image.icc.lutSize * image.icc.lutSize + (size_t)g * image.icc.lutSize + (size_t)r) * 3;
-    };
+    std::vector<std::array<float, 3>> axis(image.icc.lutSize);
+    for (size_t c = 0; c < 3; ++c) {
+        const float lo = shapeLutInput(minimum[c]);
+        const float hi = shapeLutInput(maximum[c]);
+        for (size_t i = 0; i < image.icc.lutSize; ++i) {
+            const float shaped = lo + (hi - lo) * (i / float(image.icc.lutSize - 1));
+            axis[i][c]         = std::copysign(shaped * shaped, shaped);
+        }
+    }
 
     for (size_t bz = 0; bz < image.icc.lutSize; ++bz) {
         for (size_t gy = 0; gy < image.icc.lutSize; ++gy) {
             for (size_t rx = 0; rx < image.icc.lutSize; ++rx) {
-                float in[3] = {
-                    rx / float(image.icc.lutSize - 1),
-                    gy / float(image.icc.lutSize - 1),
-                    bz / float(image.icc.lutSize - 1),
-                };
+                const float in[3] = {axis[rx][0], axis[gy][1], axis[bz][2]};
                 float outRGB[3];
                 cmsDoTransform(xform.get(), in, outRGB, 1);
-
                 outRGB[0] = std::clamp(outRGB[0], 0.F, 1.F);
                 outRGB[1] = std::clamp(outRGB[1], 0.F, 1.F);
                 outRGB[2] = std::clamp(outRGB[2], 0.F, 1.F);

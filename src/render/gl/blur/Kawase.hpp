@@ -2,9 +2,12 @@
 
 #include "Material.hpp"
 #include "Provider.hpp"
+#include "../../../helpers/cm/ColorManagement.hpp"
 
 namespace Render::GL {
     class CHyprOpenGLImpl;
+
+    NColorManagement::PImageDescription blurIntermediateImageDescription(CRenderContext& ctx);
 
     class CDualKawaseBlurProvider : public IGLBlurProvider {
       public:

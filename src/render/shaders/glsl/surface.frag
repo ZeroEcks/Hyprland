@@ -6,11 +6,11 @@
 
 precision         highp float;
 in vec2           v_texcoord;
-uniform sampler2D tex;
+uniform highp sampler2D tex;
 #if USE_BLUR
 uniform vec2      uvSize;
 uniform vec2      uvOffset;
-uniform sampler2D blurredBG;
+uniform highp sampler2D blurredBG;
 uniform float     blurAlpha;
 #endif
 #if USE_BLUR_MATTE
@@ -18,6 +18,7 @@ uniform sampler2D blurAlphaMatte;
 #endif
 
 uniform float alpha;
+uniform bool  clampSourceRGB;
 
 #if USE_DISCARD
 uniform bool  discardOpaque;
@@ -84,6 +85,9 @@ void main() {
     float blurAlphaMask = clamp(texture(blurAlphaMatte, v_texcoord).r, 0.0, 1.0);
 #endif
 #endif
+
+    if (clampSourceRGB)
+        pixColor.rgb = clamp(pixColor.rgb, vec3(0.0), vec3(max(pixColor.a, 0.0)));
 
 #if USE_DISCARD && !USE_BLUR
     if (discardOpaque && pixColor.a * alpha == 1.0)

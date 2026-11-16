@@ -23,6 +23,8 @@ uniform float sdrBrightnessMultiplier;
 #if USE_TONEMAP
 uniform float maxLuminance;
 uniform float dstMaxLuminance;
+#if !USE_ICC
 uniform float dstRefLuminance;
+#endif
 uniform int tonemapMode;
 #endif

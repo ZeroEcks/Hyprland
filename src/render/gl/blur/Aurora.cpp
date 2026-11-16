@@ -29,6 +29,9 @@ static float srgbToLinear(float value) {
 }
 
 static float auroraLuminanceScale(CRenderContext& ctx) {
+    if (blurIntermediateImageDescription(ctx)->value().transferFunction == CM_TRANSFER_FUNCTION_EXT_LINEAR)
+        return 1.F;
+
     const auto INTERMEDIATE = getDefaultImageDescription();
     const auto WORKBUFFER   = g_pHyprRenderer->workBufferImageDescription(ctx);
     if (!WORKBUFFER)
@@ -90,7 +93,7 @@ void CAuroraBlurMaterial::bindFinish(CRenderContext& ctx, WP<CShader> shader, co
     shader->setUniformFloat(SHADER_AURORA_INTENSITY, std::clamp(*PAURORAINTENSITY, 0.F, 1.F) * std::clamp(context.strength, 0.F, 1.F));
     bindColor(SHADER_AURORA_COLOR1, COLOR1);
     bindColor(SHADER_AURORA_COLOR2, COLOR2);
-    shader->setUniformInt(SHADER_AURORA_TRANSFER_FUNCTION, sc<int>(getDefaultImageDescription()->value().transferFunction));
+    shader->setUniformInt(SHADER_AURORA_TRANSFER_FUNCTION, sc<int>(blurIntermediateImageDescription(ctx)->value().transferFunction));
 }
 
 float CAuroraBlurMaterial::animationPhase(CRenderContext& ctx) const {

@@ -32,7 +32,7 @@ void CHazeBlurMaterial::bindFinish(CRenderContext& ctx, WP<CShader> shader, cons
 
     shader->setUniformFloat(SHADER_HAZE_INTENSITY, std::clamp(*PHAZEINTENSITY, 0.F, 1.F) * std::clamp(context.strength, 0.F, 1.F));
     shader->setUniformFloat(SHADER_HAZE_IRIDESCENCE, std::clamp(*PHAZEIRIDESCENCE, 0.F, 1.F));
-    shader->setUniformInt(SHADER_HAZE_TRANSFER_FUNCTION, sc<int>(getDefaultImageDescription()->value().transferFunction));
+    shader->setUniformInt(SHADER_HAZE_TRANSFER_FUNCTION, sc<int>(blurIntermediateImageDescription(ctx)->value().transferFunction));
 }
 
 CHazeBlurProvider::CHazeBlurProvider(CHyprOpenGLImpl& impl) : CDualKawaseBlurProvider(impl, makeUnique<CHazeBlurMaterial>()) {

@@ -4,7 +4,7 @@
 
 precision         highp float;
 in vec2           v_texcoord;
-uniform sampler2D tex;
+uniform highp sampler2D tex;
 
 uniform float     noise;
 uniform float     brightness;
@@ -45,16 +45,20 @@ vec4 applyHaze(vec4 color) {
         return color;
 
     float alpha        = color.a;
-    vec3 linearColor   = toLinearRGB(max(color.rgb / alpha, vec3(0.0)), hazeTransferFunction);
+    bool  extended      = hazeTransferFunction == CM_TRANSFER_FUNCTION_EXT_LINEAR;
+    vec3  inputColor    = color.rgb / alpha;
+    vec3  linearColor   = toLinearRGB(extended ? inputColor : max(inputColor, vec3(0.0)), hazeTransferFunction);
     float luminance    = max(dot(linearColor, BT709_LUMA), 0.0);
     float phase        = clamp(dot(v_texcoord - vec2(0.5), vec2(1.28, -0.72)), -1.0, 1.0);
     float iridescence  = clamp(hazeIridescence, 0.0, 1.0);
     vec3 spectralShift = luminance * (pearlColor(phase) - vec3(1.0)) * iridescence * 0.65;
     float sheen        = 1.0 + (1.0 - abs(phase)) * 0.08;
-    vec3 filmColor     = max((linearColor + spectralShift) * sheen, vec3(0.0));
+    vec3  filmColor     = (linearColor + spectralShift) * sheen;
+    if (!extended)
+        filmColor = max(filmColor, vec3(0.0));
 
     linearColor = mix(linearColor, filmColor, intensity);
-    return fromLinear(vec4(max(linearColor, vec3(0.0)) * alpha, alpha), hazeTransferFunction);
+    return fromLinear(vec4((extended ? linearColor : max(linearColor, vec3(0.0))) * alpha, alpha), hazeTransferFunction);
 }
 
 void main() {

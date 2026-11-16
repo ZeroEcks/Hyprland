@@ -12,6 +12,14 @@ uniform float referenceLuminanceScale;
 #if USE_MIRROR
 uniform float mirrorReferenceLuminanceScale;
 #endif
+#if USE_ICC
+uniform vec3  iccLutDomainOffset;
+uniform vec3  iccLutDomainScale;
+uniform float dstRefLuminance;
+#if USE_MIRROR
+uniform mat3 iccToSRGB;
+#endif
+#endif
 
 #if USE_SDR_MOD
 vec4 saturate(vec4 color, mat3 primaries, float saturation) {
@@ -23,15 +31,20 @@ vec4 saturate(vec4 color, mat3 primaries, float saturation) {
 }
 #endif
 
-vec3 applyIcc3DLut(vec3 linearRgb01, highp sampler3D iccLut3D, float iccLutSize) {
-    vec3 x = clamp(linearRgb01, 0.0, 1.0);
+#if USE_ICC
+vec3 iccShape(vec3 linearRGB) {
+    return sign(linearRGB) * sqrt(abs(linearRGB));
+}
 
-    // Map [0..1] to texel centers to avoid edge issues
+vec3 applyIcc3DLut(vec3 linearRGB, highp sampler3D iccLut3D, float iccLutSize) {
+    vec3 x = clamp((iccShape(linearRGB) - iccLutDomainOffset) * iccLutDomainScale, 0.0, 1.0);
+    // Sample texel centers; domain clipping is not source-sRGB gamut clipping.
     float N     = iccLutSize;
     vec3  coord = (x * (N - 1.0) + 0.5) / N;
 
     return texture(iccLut3D, coord).rgb;
 }
+#endif
 
 vec3 xy2xyz(vec2 xy) {
     if (xy.y == 0.0)
@@ -241,6 +254,16 @@ vec4
     pixColor.rgb += linearNoise;
     
 #if USE_ICC
+    pixColor.rgb = convertMatrix * pixColor.rgb;
+    if (srcTF != CM_TRANSFER_FUNCTION_LINEAR)
+        pixColor = toNit(pixColor, srcTFRange);
+#if USE_MIRROR
+    vec3 mirrorLinear = (pixColor.rgb * mirrorReferenceLuminanceScale - SDR_MIN_LUMINANCE) / (SDR_MAX_LUMINANCE - SDR_MIN_LUMINANCE);
+    vec4 mirrorColor  = vec4(fromLinearRGB(iccToSRGB * mirrorLinear, CM_TRANSFER_FUNCTION_SRGB) * finalAlpha, finalAlpha);
+#endif
+    // Match destination black and reference white, including the previous
+    // source/destination reference-white adaptation exactly once.
+    pixColor.rgb = (pixColor.rgb * referenceLuminanceScale - dstTFRange.x) / (dstRefLuminance - dstTFRange.x);
     pixColor.rgb = applyIcc3DLut(pixColor.rgb, iccLut3D, iccLutSize);
     pixColor.a   = finalAlpha;
     pixColor.rgb *= pixColor.a;
