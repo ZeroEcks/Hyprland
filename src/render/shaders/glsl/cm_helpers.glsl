@@ -8,6 +8,11 @@
 #include "defines.h"
 #include "constants.h"
 
+uniform float referenceLuminanceScale;
+#if USE_MIRROR
+uniform float mirrorReferenceLuminanceScale;
+#endif
+
 #if USE_SDR_MOD
 vec4 saturate(vec4 color, mat3 primaries, float saturation) {
     if (saturation == 1.0)
@@ -243,17 +248,27 @@ vec4
     pixColor.rgb = convertMatrix * pixColor.rgb;
     if (srcTF != CM_TRANSFER_FUNCTION_LINEAR)
         pixColor = toNit(pixColor, srcTFRange);
+#if USE_MIRROR
+    // The unmodified copy has its own white and must not inherit display tone mapping.
+    vec4 mirrorColor = vec4(pixColor.rgb * finalAlpha, finalAlpha);
+    if (dstTF == CM_TRANSFER_FUNCTION_GAMMA22 || dstTF == CM_TRANSFER_FUNCTION_SRGB) {
+        mirrorColor.rgb *= referenceLuminanceScale;
+        mirrorColor = fromLinearNit(mirrorColor, dstTF, dstTFRange);
+    } else if (srcTF == CM_TRANSFER_FUNCTION_GAMMA22 || srcTF == CM_TRANSFER_FUNCTION_SRGB) {
+        mirrorColor = fromLinearNit(mirrorColor, CM_TRANSFER_FUNCTION_SRGB, srcTFRange);
+    } else {
+        mirrorColor.rgb *= mirrorReferenceLuminanceScale;
+        mirrorColor = fromLinearNit(mirrorColor, CM_TRANSFER_FUNCTION_SRGB, vec2(SDR_MIN_LUMINANCE, SDR_MAX_LUMINANCE));
+    }
+#endif
+    // Anchor reference whites in linear light before tone mapping or output encoding.
+    pixColor.rgb *= referenceLuminanceScale;
     pixColor.a   = finalAlpha;
     pixColor.rgb *= pixColor.a;
 #if USE_TONEMAP
     pixColor = tonemap(pixColor, dstxyz, maxLuminance, dstMaxLuminance, dstRefLuminance, srcRefLuminance, tonemapMode);
 #endif
 
-#if USE_MIRROR
-    // TODO HDR -> SDR tonemap
-    vec4 mirrorColor = fromLinearNit(pixColor, CM_TRANSFER_FUNCTION_SRGB,
-                                     srcTF == CM_TRANSFER_FUNCTION_GAMMA22 || srcTF == CM_TRANSFER_FUNCTION_SRGB ? srcTFRange : vec2(SDR_MIN_LUMINANCE, SDR_MAX_LUMINANCE));
-#endif
     pixColor = fromLinearNit(pixColor, dstTF, dstTFRange);
 #if USE_SDR_MOD
     pixColor = saturate(pixColor, dstxyz, sdrSaturation);

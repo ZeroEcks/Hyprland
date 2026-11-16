@@ -1291,6 +1291,8 @@ void CHyprOpenGLImpl::passCMUniforms(WP<CShader> shader, const NColorManagement:
     shader->setUniformFloat2(SHADER_DST_TF_RANGE, settings.dstTFRange.min, settings.dstTFRange.max);
     shader->setUniformFloat(SHADER_SRC_REF_LUMINANCE, settings.srcRefLuminance);
     shader->setUniformFloat(SHADER_DST_REF_LUMINANCE, settings.dstRefLuminance);
+    shader->setUniformFloat(SHADER_REFERENCE_LUMINANCE_SCALE, settings.referenceLuminanceScale);
+    shader->setUniformFloat(SHADER_MIRROR_REFERENCE_LUMINANCE_SCALE, SDR_MAX_LUMINANCE / settings.srcRefLuminance);
     shader->setUniformFloat(SHADER_MAX_LUMINANCE, settings.maxLuminance);
     shader->setUniformFloat(SHADER_DST_MAX_LUMINANCE, settings.dstMaxLuminance);
     shader->setUniformInt(SHADER_TONEMAP_MODE, settings.tonemapMode);

@@ -2667,7 +2667,7 @@ bool CMonitor::needsUnmodifiedCopy() {
         return true;
 
     const bool HAS_MODS = m_sdrMinLuminance != SDR_MIN_LUMINANCE || m_sdrMaxLuminance != SDR_MAX_LUMINANCE || (m_sdrBrightness > 0 && m_sdrBrightness != 1.0) ||
-        (m_sdrSaturation > 0 && m_sdrSaturation != 1.0);
+        (m_sdrSaturation > 0 && m_sdrSaturation != 1.0) || m_imageDescription->value().luminances.reference != SDR_REF_LUMINANCE;
 
     if (!HAS_MODS)
         return false;

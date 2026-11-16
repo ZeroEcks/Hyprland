@@ -138,6 +138,8 @@ void CShader::getUniformLocations() {
     m_uniformLocations[SHADER_SRC_REF_LUMINANCE]    = getUniform("srcRefLuminance");
     m_uniformLocations[SHADER_DST_MAX_LUMINANCE]    = getUniform("dstMaxLuminance");
     m_uniformLocations[SHADER_DST_REF_LUMINANCE]    = getUniform("dstRefLuminance");
+    m_uniformLocations[SHADER_REFERENCE_LUMINANCE_SCALE] = getUniform("referenceLuminanceScale");
+    m_uniformLocations[SHADER_MIRROR_REFERENCE_LUMINANCE_SCALE] = getUniform("mirrorReferenceLuminanceScale");
     m_uniformLocations[SHADER_SDR_SATURATION]       = getUniform("sdrSaturation");
     m_uniformLocations[SHADER_SDR_BRIGHTNESS]       = getUniform("sdrBrightnessMultiplier");
     m_uniformLocations[SHADER_CONVERT_MATRIX]       = getUniform("convertMatrix");

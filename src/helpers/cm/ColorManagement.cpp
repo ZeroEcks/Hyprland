@@ -505,6 +505,9 @@ RGBAColor NColorManagement::convertColor(RGBAColor color, PImageDescription srcD
         color.c.b                = converted.z;
         if (srcDesc->value().transferFunction != CM_TRANSFER_FUNCTION_LINEAR)
             color = toNit(color, settings.srcTFRange);
+        for (uint i = 0; i <= 2; i++) {
+            color.v[i] *= settings.referenceLuminanceScale;
+        }
         color *= color.c.a;
         if (settings.needsTonemap)
             color = tonemap(color, settings.dstPrimaries2XYZ, settings.maxLuminance, settings.dstMaxLuminance, settings.dstRefLuminance, settings.srcRefLuminance);

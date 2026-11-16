@@ -27,6 +27,7 @@ vec4 blurPrepare(vec4 pixColor, float contrast, float brightness
     }
     pixColor.rgb = convertMatrix * toLinearRGB(pixColor.rgb, sourceTF);
     pixColor     = toNit(pixColor, srcTFRange);
+    pixColor.rgb *= referenceLuminanceScale;
     pixColor.rgb *= pixColor.a;
     pixColor = fromLinearNit(pixColor, targetTF, dstTFRange);
 #endif

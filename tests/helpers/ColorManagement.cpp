@@ -2,15 +2,20 @@
 #include <render/types.hpp>
 
 #include <gtest/gtest.h>
+#include <cmath>
 
 using namespace NColorManagement;
 
-static RGBAColor convertWithoutTonemapping(RGBAColor color, PImageDescription source, PImageDescription target) {
+static RGBAColor convertWithoutTonemapping(RGBAColor color, PImageDescription source, PImageDescription target, bool anchorReferenceWhite = false) {
     const Render::SCMSettings settings = {
-        .sourceTF   = source->value().transferFunction,
-        .targetTF   = target->value().transferFunction,
-        .srcTFRange = {.min = source->value().getTFMinLuminance(), .max = source->value().getTFMaxLuminance()},
-        .dstTFRange = {.min = target->value().getTFMinLuminance(), .max = target->value().getTFMaxLuminance()},
+        .sourceTF        = source->value().transferFunction,
+        .targetTF        = target->value().transferFunction,
+        .srcTFRange      = {.min = source->value().getTFMinLuminance(), .max = source->value().getTFMaxLuminance()},
+        .dstTFRange      = {.min = target->value().getTFMinLuminance(), .max = target->value().getTFMaxLuminance()},
+        // The decoding tests below deliberately keep absolute luminance unchanged.
+        .srcRefLuminance = anchorReferenceWhite ? source->value().luminances.reference : 80.0f,
+        .dstRefLuminance = anchorReferenceWhite ? target->value().luminances.reference : 80.0f,
+        .referenceLuminanceScale = anchorReferenceWhite ? static_cast<float>(target->value().luminances.reference) / source->value().luminances.reference : 1.0f,
     };
     return convertColor(color, source, target, settings);
 }
@@ -119,4 +124,47 @@ TEST(ColorManagement, NativeLinearConversionPreservesExtendedRange) {
     EXPECT_NEAR(color.c.g, 203.0, 0.0001);
     EXPECT_NEAR(color.c.b, 12500.0, 0.0001);
     EXPECT_DOUBLE_EQ(color.c.a, 1.0);
+}
+
+TEST(ColorManagement, RelativeReferenceWhitePreservesSDRNeutralRamp) {
+    for (const auto reference : {80U, 120U, 203U, 400U}) {
+        const auto source = nativeLinearDescription({.min = 0.0f, .max = reference, .reference = reference});
+        for (const auto linear : {0.005, 0.02, 0.18, 0.5, 0.8, 1.0}) {
+            const auto color = convertWithoutTonemapping({{.r = linear, .g = linear, .b = linear, .a = 1.0}}, source, DEFAULT_SRGB_IMAGE_DESCRIPTION, true);
+            // sRGB's declared display range is 0.2..80 nits. Its reference white is 80.
+            const double signal  = (linear * 80.0 - 0.2) / 79.8;
+            const double encoded = signal <= 0.0031308 ? 12.92 * signal : 1.055 * std::pow(signal, 1.0 / 2.4) - 0.055;
+            expectNeutralColor(color, encoded);
+        }
+    }
+}
+
+TEST(ColorManagement, RelativeReferenceWhitePreservesHeadroomAndAlpha) {
+    const auto source = nativeLinearDescription({.min = 0.0f, .max = 812, .reference = 203});
+    const auto target = nativeLinearDescription({.min = 0.0f, .max = 320, .reference = 80});
+    for (const auto alpha : {0.0, 0.25, 0.5, 1.0}) {
+        for (const auto signal : {-0.05, 0.25, 0.5, 1.25}) {
+            const auto color = convertWithoutTonemapping({{.r = signal * alpha, .g = signal * alpha, .b = signal * alpha, .a = alpha}}, source, target, true);
+            expectNeutralColor(color, signal * alpha, alpha);
+            const auto roundTrip = convertWithoutTonemapping(color, target, source, true);
+            expectNeutralColor(roundTrip, signal * alpha, alpha);
+        }
+    }
+}
+
+TEST(ColorManagement, RelativeReferenceWhiteDoesNotDoubleScaleWorkBuffers) {
+    const auto source = nativeLinearDescription({.min = 0.0f, .max = 203, .reference = 203});
+    for (const auto reference : {80U, 120U, 203U}) {
+        const auto work = LINEAR_IMAGE_DESCRIPTION->with({.min = 0.0f, .max = 1000, .reference = reference});
+        const auto nits = LINEAR_NN_IMAGE_DESCRIPTION->with({.min = 0.0f, .max = 1000, .reference = reference});
+        for (const auto linear : {0.02, 0.18, 0.5, 1.0}) {
+            const RGBAColor input = {{.r = linear, .g = linear, .b = linear, .a = 1.0}};
+            const auto direct     = convertWithoutTonemapping(input, source, DEFAULT_SRGB_IMAGE_DESCRIPTION, true);
+            const auto encoded    = convertWithoutTonemapping(input, source, work, true);
+            const auto decoded    = convertWithoutTonemapping(encoded, work, nits, true);
+            expectNeutralColor(decoded, linear * reference);
+            const auto composed = convertWithoutTonemapping(decoded, nits, DEFAULT_SRGB_IMAGE_DESCRIPTION, true);
+            expectNeutralColor(composed, direct.c.r);
+        }
+    }
 }

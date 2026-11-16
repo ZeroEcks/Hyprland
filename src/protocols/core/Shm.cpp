@@ -222,8 +222,10 @@ void CWLSHMProtocol::bindManager(wl_client* client, void* data, uint32_t ver, ui
         m_shmFormats.push_back(WL_SHM_FORMAT_ARGB8888);
         m_shmFormats.push_back(WL_SHM_FORMAT_XRGB8888);
 
-        static const std::array<DRMFormat, 6> supportedShmFourccFormats = {
-            DRM_FORMAT_XBGR8888, DRM_FORMAT_ABGR8888, DRM_FORMAT_XRGB2101010, DRM_FORMAT_ARGB2101010, DRM_FORMAT_XBGR2101010, DRM_FORMAT_ABGR2101010,
+        // RGBA16F upload and filtering are core in the renderer's required GLES 3.0.
+        // SHM textures do not require FP16 render targets or DMA-BUF import support.
+        static const std::array<DRMFormat, 7> supportedShmFourccFormats = {
+            DRM_FORMAT_XBGR8888, DRM_FORMAT_ABGR8888, DRM_FORMAT_XRGB2101010, DRM_FORMAT_ARGB2101010, DRM_FORMAT_XBGR2101010, DRM_FORMAT_ABGR2101010, DRM_FORMAT_ABGR16161616F,
         };
 
         for (auto const& fmt : supportedShmFourccFormats) {
